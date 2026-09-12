@@ -43,9 +43,9 @@ class ModelTierSettings(BaseModel):
 
 class AppSettings(BaseModel):
     active_gpt_profile_id: str | None = None
-    gpt_profiles: list[GPTProfile] = []
-    video: VideoSettings = VideoSettings()
-    models: ModelTierSettings = ModelTierSettings()
+    gpt_profiles: list[GPTProfile] = Field(default_factory=list)
+    video: VideoSettings = Field(default_factory=VideoSettings)
+    models: ModelTierSettings = Field(default_factory=ModelTierSettings)
     max_candidate_clips_per_shot: int = Field(3, ge=1, le=20)
     keep_intermediate_files: bool = True
 
@@ -107,5 +107,5 @@ class Job(BaseModel):
     created_at: str
     updated_at: str
     stages: list[StageStatus]
-    logs: list[str] = []
-    timeline: list[dict] = []
+    logs: list[str] = Field(default_factory=list)
+    timeline: list[dict] = Field(default_factory=list)
