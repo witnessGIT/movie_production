@@ -74,7 +74,7 @@ def _scene_text(scene: dict[str, float], transcript: list[dict[str, Any]]) -> st
     return " ".join(pieces).strip()
 
 
-def analyze_asset(asset: dict, enable_transcription: bool = True) -> dict[str, Any]:
+def analyze_asset(asset: dict, enable_transcription: bool = True, whisper_model: str = "small") -> dict[str, Any]:
     local = asset.get("local_path")
     media_type = asset.get("media_type") or mimetypes.guess_type(asset.get("label", ""))[0] or "application/octet-stream"
     result: dict[str, Any] = {"asset_id": asset.get("id"), "label": asset.get("label", ""), "kind": asset.get("kind"), "media_type": media_type, "source": asset.get("source", ""), "local_path": local, "candidates": []}
@@ -98,7 +98,7 @@ def analyze_asset(asset: dict, enable_transcription: bool = True) -> dict[str, A
     meta = ffprobe(path)
     result["metadata"] = meta
     duration = float(meta.get("duration") or 0.0)
-    transcript = transcribe(path) if enable_transcription and (media_type.startswith("video/") or media_type.startswith("audio/")) else []
+    transcript = transcribe(path, whisper_model) if enable_transcription and (media_type.startswith("video/") or media_type.startswith("audio/")) else []
     result["transcript"] = transcript
     if media_type.startswith("video/") or path.suffix.lower() in {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}:
         scenes = detect_scenes(path, duration)
