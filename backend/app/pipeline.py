@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .media_engine import analyze_asset
 from .models import AppSettings, Job, StageState, StageStatus
+from .narration import generate_narration
 from .ranking import rank_candidates
 from .renderer import qa_video, render_timeline
 from .storage import artifacts_dir, jobs_path, read_json, write_json
@@ -152,7 +153,7 @@ class PipelineManager:
             total = max(1, len(state["assets"]))
             stage = next(s for s in job.stages if s.id == stage_id)
             for i, asset in enumerate(state["assets"]):
-                result = await asyncio.to_thread(analyze_asset, asset, True)
+                result = await asyncio.to_thread(analyze_asset, asset, True, settings.models.whisper_model)
                 analyses.append(result)
                 stage.progress = 10 + int((i + 1) / total * 80)
                 await self.emit(job, {"type": "stage", "stage": stage.model_dump(mode="json")})
@@ -178,13 +179,17 @@ class PipelineManager:
             return {"summary": f"生成 {len(segments)} 段真实时间线", "segments": segments}
         if stage_id == "render":
             out_dir = artifacts_dir(job.project_id, job.id).parent
-            ext = settings.video.format
-            output = out_dir / f"final.{ext}"
+            output = out_dir / f"final.{settings.video.format}"
             if not shutil.which("ffmpeg"):
                 return {"summary": "FFmpeg 未安装：时间线已生成，暂未输出视频", "output": None, "ffmpeg": False}
-            await asyncio.to_thread(render_timeline, state.get("timeline", []), output, settings.video.width, settings.video.height, settings.video.fps)
+            narration = await asyncio.to_thread(generate_narration, source_text, out_dir / "narration.wav", settings.video.voiceover_enabled)
+            await asyncio.to_thread(render_timeline, state.get("timeline", []), output,
+                                    settings.video.width, settings.video.height, settings.video.fps,
+                                    narration, settings.video.subtitle_enabled)
             state["output"] = str(output)
-            return {"summary": f"已渲染成片 {output.name}", "output": str(output), "ffmpeg": True}
+            return {"summary": f"已渲染成片 {output.name}" + ("（含本地旁白）" if narration else ""),
+                    "output": str(output), "ffmpeg": True, "narration": str(narration) if narration else None,
+                    "subtitle": str(output.with_suffix('.srt')) if settings.video.subtitle_enabled else None}
         if stage_id == "qa":
             output = state.get("output")
             result = qa_video(Path(output)) if output else {"ok": False, "issues": ["尚未生成视频；请安装 FFmpeg 后重跑"]}
