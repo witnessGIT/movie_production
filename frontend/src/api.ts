@@ -10,6 +10,7 @@ export const api = {
   capabilities: () => json<Capability[]>('/api/capabilities'),
   settings: () => json<AppSettings>('/api/settings'),
   saveSettings: (settings: AppSettings) => json<AppSettings>('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) }),
+  openGptProfile: (id: string) => json<{ok:boolean; message:string}>(`/api/gpt-profiles/${id}/open`, { method: 'POST' }),
   projects: () => json<Project[]>('/api/projects'),
   createProject: (title: string, source_text: string) => json<Project>('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, source_text }) }),
   updateProject: (id: string, title: string, source_text: string) => json<Project>(`/api/projects/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, source_text }) }),
