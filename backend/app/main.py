@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import subprocess
+import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -55,6 +57,27 @@ def get_settings():
 def put_settings(payload: AppSettings):
     write_json(settings_path(), payload.model_dump(mode="json"))
     return payload
+
+
+@app.post("/api/gpt-profiles/{profile_id}/open")
+def open_gpt_profile(profile_id: str):
+    settings = AppSettings.model_validate(read_json(settings_path(), {}))
+    profile = next((item for item in settings.gpt_profiles if item.id == profile_id), None)
+    if profile is None:
+        raise HTTPException(404, "GPT profile not found. Save settings first.")
+    if not any(item["id"] == "playwright" and item["available"] for item in detect_capabilities()):
+        raise HTTPException(409, "Playwright 未安装。请在 backend 中执行: pip install -e '.[browser]'，然后执行 playwright install chromium")
+    backend_dir = Path(__file__).resolve().parents[1]
+    creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    subprocess.Popen(
+        [sys.executable, "-m", "app.gpt_browser", profile_id],
+        cwd=str(backend_dir),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=creationflags,
+        start_new_session=(sys.platform != "win32"),
+    )
+    return {"ok": True, "message": f"已启动独立浏览器会话：{profile.label}"}
 
 
 @app.get("/api/projects")
