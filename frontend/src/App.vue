@@ -18,16 +18,27 @@ const settings = ref<AppSettings | null>(null)
 const capabilities = ref<Capability[]>([])
 const assets = ref<Asset[]>([])
 const job = ref<Job | null>(null)
+const rankArtifact = ref<any | null>(null)
+const renderArtifact = ref<any | null>(null)
 const busy = ref(false)
 const error = ref('')
 let socket: WebSocket | null = null
 
 const current = computed(() => projects.value.find(p => p.id === currentId.value) || null)
 const overall = computed(() => !job.value ? 0 : Math.round(job.value.stages.reduce((s, x) => s + x.progress, 0) / job.value.stages.length))
+const topCandidates = computed(() => (rankArtifact.value?.ranked || []).slice(0, 6))
 
 async function refresh() {
   ;[projects.value, settings.value, capabilities.value] = await Promise.all([api.projects(), api.settings(), api.capabilities()])
   if (!currentId.value && projects.value.length) await selectProject(projects.value[0].id)
+}
+
+async function loadOutputs(jobId: string) {
+  if (!currentId.value) return
+  rankArtifact.value = null
+  renderArtifact.value = null
+  try { rankArtifact.value = await api.artifact(currentId.value, jobId, 'rank') } catch {}
+  try { renderArtifact.value = await api.artifact(currentId.value, jobId, 'render') } catch {}
 }
 
 async function selectProject(id: string) {
@@ -37,7 +48,10 @@ async function selectProject(id: string) {
   sourceText.value = p?.source_text || ''
   assets.value = await api.assets(id)
   const jobs = await api.jobs(id)
-  if (jobs.length) job.value = jobs[0]
+  job.value = jobs[0] || null
+  rankArtifact.value = null
+  renderArtifact.value = null
+  if (job.value) await loadOutputs(job.value.id)
 }
 
 async function newProject() {
@@ -57,11 +71,13 @@ async function saveProject() {
 async function run() {
   if (!currentId.value) return
   await saveProject()
+  rankArtifact.value = null
+  renderArtifact.value = null
   const createdJob = await api.startJob(currentId.value)
   job.value = createdJob
   if (socket) socket.close()
   socket = jobSocket(createdJob.id)
-  socket.onmessage = event => {
+  socket.onmessage = async event => {
     const data = JSON.parse(event.data)
     if (data.type === 'snapshot') {
       job.value = data.job
@@ -72,11 +88,18 @@ async function run() {
     if (data.type === 'stage') {
       const i = active.stages.findIndex(s => s.id === data.stage.id)
       if (i >= 0) active.stages[i] = data.stage
+      if (data.stage.id === 'rank' && data.stage.state === 'done') {
+        try { rankArtifact.value = await api.artifact(currentId.value, active.id, 'rank') } catch {}
+      }
+      if (data.stage.id === 'render' && data.stage.state === 'done') {
+        try { renderArtifact.value = await api.artifact(currentId.value, active.id, 'render') } catch {}
+      }
     }
     if (data.type === 'log') active.logs.push(data.message)
     if (data.type === 'job') {
       active.state = data.state
       if (data.timeline) active.timeline = data.timeline
+      if (data.state === 'done') await loadOutputs(active.id)
     }
   }
 }
@@ -93,22 +116,22 @@ onMounted(() => refresh().catch(e => error.value = String(e)))
   <div class="shell">
     <aside class="sidebar">
       <div class="brand"><div class="brand-mark">MP</div><div><strong>Movie Production</strong><small>AI 视频制作控制台</small></div></div>
-      <nav>
-        <button v-for="item in tabs" :key="item" :class="{active: tab===item}" @click="tab=item">{{ item }}</button>
-      </nav>
+      <nav><button v-for="item in tabs" :key="item" :class="{active: tab===item}" @click="tab=item">{{ item }}</button></nav>
       <div class="project-list">
         <div class="section-title"><span>项目</span><button class="icon-button" @click="newProject">＋</button></div>
-        <button v-for="p in projects" :key="p.id" class="project-button" :class="{selected:p.id===currentId}" @click="selectProject(p.id)">
-          <span>{{ p.title }}</span><small>{{ p.asset_count }} 素材</small>
-        </button>
+        <button v-for="p in projects" :key="p.id" class="project-button" :class="{selected:p.id===currentId}" @click="selectProject(p.id)"><span>{{ p.title }}</span><small>{{ p.asset_count }} 素材</small></button>
       </div>
-      <div class="sidebar-foot"><span class="dot online"></span> Backend v0.1</div>
+      <div class="sidebar-foot"><span class="dot online"></span> Backend v0.2</div>
     </aside>
 
     <main class="main">
       <header class="topbar">
         <div><h1>{{ tab }}</h1><p v-if="current">{{ current.title }}</p></div>
-        <div class="top-actions"><span v-if="job" class="progress-label">总进度 {{ overall }}%</span><button class="primary" :disabled="!currentId || job?.state==='running'" @click="run">▶ 开始制作</button></div>
+        <div class="top-actions">
+          <span v-if="job" class="progress-label">总进度 {{ overall }}%</span>
+          <a v-if="job && renderArtifact?.output" class="secondary" :href="api.outputUrl(currentId, job.id)" target="_blank">▶ 查看成片</a>
+          <button class="primary" :disabled="!currentId || job?.state==='running'" @click="run">▶ 开始制作</button>
+        </div>
       </header>
 
       <div v-if="error" class="error-banner">{{ error }}</div>
@@ -126,7 +149,18 @@ onMounted(() => refresh().catch(e => error.value = String(e)))
             <PipelineBoard :job="job" compact />
           </div>
         </section>
-        <section class="panel"><div class="panel-head"><div><h2>时间线预览</h2><p>当“时间线生成”完成后自动出现</p></div></div><TimelinePreview :segments="job?.timeline || []" :duration="settings?.video.target_duration_sec || 60" /></section>
+
+        <section class="panel">
+          <div class="panel-head"><div><h2>候选镜头</h2><p>媒体分析和相关性排序完成后显示每个镜头的 Top 候选</p></div></div>
+          <div v-if="topCandidates.length" class="cap-grid">
+            <div v-for="item in topCandidates" :key="item.shot?.shot" class="cap">
+              <div><strong>镜头 {{ item.shot?.shot }} · {{ item.shot?.voiceover?.slice(0, 30) }}</strong><small v-if="item.candidates?.[0]">素材 {{ item.candidates[0].asset_id }} · 匹配 {{ Math.round((item.candidates[0].score || 0)*100) }}% · {{ item.candidates[0].start }}–{{ item.candidates[0].end }}s</small><small v-else>没有可用候选</small></div>
+            </div>
+          </div>
+          <div v-else class="empty">等待“候选片段粗筛”完成</div>
+        </section>
+
+        <section class="panel"><div class="panel-head"><div><h2>时间线预览</h2><p>时间线使用真实素材片段；没有素材时自动生成补位镜头</p></div></div><TimelinePreview :segments="job?.timeline || []" :duration="settings?.video.target_duration_sec || 60" /></section>
         <section class="grid two"><div class="panel"><div class="panel-head"><h2>最近日志</h2></div><LogPanel :logs="job?.logs || []" /></div><div class="panel"><div class="panel-head"><h2>本机能力</h2></div><div class="cap-grid"><div v-for="c in capabilities" :key="c.id" class="cap"><span :class="['dot', c.available?'online':'offline']"></span><div><strong>{{ c.label }}</strong><small>{{ c.tier }} · {{ c.detail }}</small></div></div></div></div></section>
       </template>
 
