@@ -65,7 +65,7 @@ async function openProfile(id: string) {
     </section>
 
     <section class="panel">
-      <div class="panel-head"><div><h2>视频规格</h2><p>成片目标与时间线长度都使用这里的参数</p></div><div class="preset-buttons"><button class="chip" @click="applyPreset('landscape')">横屏 16:9</button><button class="chip" @click="applyPreset('vertical')">竖屏 9:16</button><button class="chip" @click="applyPreset('square')">方形 1:1</button></div></div>
+      <div class="panel-head"><div><h2>视频规格</h2><p>成片目标、字幕与本地旁白都使用这里的参数</p></div><div class="preset-buttons"><button class="chip" @click="applyPreset('landscape')">横屏 16:9</button><button class="chip" @click="applyPreset('vertical')">竖屏 9:16</button><button class="chip" @click="applyPreset('square')">方形 1:1</button></div></div>
       <div class="form-grid four">
         <label>宽度<input type="number" min="320" max="7680" v-model.number="settings.video.width" /></label>
         <label>高度<input type="number" min="240" max="4320" v-model.number="settings.video.height" /></label>
@@ -74,7 +74,8 @@ async function openProfile(id: string) {
         <label>码率<input v-model="settings.video.bitrate" /></label>
         <label>格式<select v-model="settings.video.format"><option>mp4</option><option>mov</option><option>webm</option></select></label>
         <label>画幅<select v-model="settings.video.aspect_mode"><option>16:9</option><option>9:16</option><option>1:1</option><option>custom</option></select></label>
-        <label class="check"><input type="checkbox" v-model="settings.video.subtitle_enabled" />生成字幕</label>
+        <label class="check"><input type="checkbox" v-model="settings.video.subtitle_enabled" />生成字幕文件</label>
+        <label class="check"><input type="checkbox" v-model="settings.video.voiceover_enabled" />本机免费旁白（支持时自动启用）</label>
       </div>
     </section>
 
@@ -86,6 +87,7 @@ async function openProfile(id: string) {
         <label>Embedding<input v-model="settings.models.embedding_model" /></label>
         <label>TIER 2 Provider<select v-model="settings.models.tier2_provider"><option>ollama</option><option>lmstudio</option><option>disabled</option></select></label>
         <label>TIER 2 模型<input v-model="settings.models.tier2_model" /></label>
+        <label>Whisper 模型<input v-model="settings.models.whisper_model" placeholder="small" /></label>
         <label>强模型<select v-model="settings.models.strong_model_mode"><option value="chatgpt_handoff">ChatGPT 人工交接</option><option value="local_only">只用本地模型</option></select></label>
         <label>每镜头送强模型的候选数<input type="number" min="1" max="20" v-model.number="settings.max_candidate_clips_per_shot" /></label>
         <label class="check"><input type="checkbox" v-model="settings.keep_intermediate_files" />保留中间产物</label>
