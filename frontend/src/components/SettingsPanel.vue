@@ -20,6 +20,15 @@ function removeProfile(id: string) {
   settings.value.gpt_profiles = settings.value.gpt_profiles.filter(p => p.id !== id)
   if (settings.value.active_gpt_profile_id === id) settings.value.active_gpt_profile_id = settings.value.gpt_profiles[0]?.id || null
 }
+function addSource() {
+  if (!settings.value) return
+  const id = `source-${Date.now()}`
+  settings.value.sources.push({ id, label: `素材来源 ${settings.value.sources.length + 1}`, kind: 'rss', url: '', enabled: true, notes: '' })
+}
+function removeSource(id: string) {
+  if (!settings.value) return
+  settings.value.sources = settings.value.sources.filter(s => s.id !== id)
+}
 function applyPreset(preset: string) {
   if (!settings.value) return
   const v = settings.value.video
@@ -65,13 +74,28 @@ async function openProfile(id: string) {
     </section>
 
     <section class="panel">
+      <div class="panel-head"><div><h2>素材来源网站</h2><p>RSS 可自动发现相关新闻；搜索模板请用 {query} 作为关键词占位符。特殊网站后续可增加专用适配器。</p></div><button class="secondary" @click="addSource">＋ 添加来源</button></div>
+      <div class="profile-list" v-if="settings.sources.length">
+        <div class="profile-card" v-for="s in settings.sources" :key="s.id">
+          <label class="radio-row"><input type="checkbox" v-model="s.enabled" /><span>启用</span></label>
+          <label>名称<input v-model="s.label" placeholder="例如：NHK / Reuters" /></label>
+          <label>类型<select v-model="s.kind"><option value="rss">RSS / Atom</option><option value="search_template">站内搜索模板</option><option value="manual">仅人工参考</option></select></label>
+          <label>地址<input v-model="s.url" :placeholder="s.kind==='search_template' ? 'https://example.com/search?q={query}' : 'https://example.com/feed.xml'" /></label>
+          <label>备注<input v-model="s.notes" placeholder="授权、用途、地区等备注" /></label>
+          <button class="danger-text" @click="removeSource(s.id)">删除来源</button>
+        </div>
+      </div>
+      <div v-else class="empty">还没有配置素材来源。你仍可在“素材库”直接上传文件或粘贴公开视频 URL。</div>
+    </section>
+
+    <section class="panel">
       <div class="panel-head"><div><h2>视频规格</h2><p>成片目标、字幕与本地旁白都使用这里的参数</p></div><div class="preset-buttons"><button class="chip" @click="applyPreset('landscape')">横屏 16:9</button><button class="chip" @click="applyPreset('vertical')">竖屏 9:16</button><button class="chip" @click="applyPreset('square')">方形 1:1</button></div></div>
       <div class="form-grid four">
         <label>宽度<input type="number" min="320" max="7680" v-model.number="settings.video.width" /></label>
         <label>高度<input type="number" min="240" max="4320" v-model.number="settings.video.height" /></label>
         <label>FPS<input type="number" min="12" max="120" v-model.number="settings.video.fps" /></label>
         <label>目标时长（秒）<input type="number" min="5" max="7200" v-model.number="settings.video.target_duration_sec" /></label>
-        <label>码率<input v-model="settings.video.bitrate" /></label>
+        <label>码率<input v-model="settings.video.bitrate" placeholder="8M" /></label>
         <label>格式<select v-model="settings.video.format"><option>mp4</option><option>mov</option><option>webm</option></select></label>
         <label>画幅<select v-model="settings.video.aspect_mode"><option>16:9</option><option>9:16</option><option>1:1</option><option>custom</option></select></label>
         <label class="check"><input type="checkbox" v-model="settings.video.subtitle_enabled" />生成字幕文件</label>
