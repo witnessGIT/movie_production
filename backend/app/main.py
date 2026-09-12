@@ -11,13 +11,14 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from .models import AppSettings, Asset, Project, ProjectCreate, TextAssetCreate, URLAssetCreate
 from .pipeline import manager
-from .storage import assets_path, project_dir, projects_path, read_json, settings_path, write_json
+from .storage import artifacts_dir, assets_path, jobs_path, project_dir, projects_path, read_json, settings_path, write_json
 from .tooling import detect_capabilities
 
-app = FastAPI(title="Movie Production API", version="0.1.0")
+app = FastAPI(title="Movie Production API", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -38,9 +39,16 @@ def get_project(project_id: str) -> dict:
     raise HTTPException(404, "Project not found")
 
 
+def get_job_record(project_id: str, job_id: str) -> dict:
+    for item in read_json(jobs_path(project_id), []):
+        if item.get("id") == job_id:
+            return item
+    raise HTTPException(404, "Job not found")
+
+
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "0.1.0"}
+    return {"ok": True, "version": "0.2.0"}
 
 
 @app.get("/api/capabilities")
@@ -69,14 +77,8 @@ def open_gpt_profile(profile_id: str):
         raise HTTPException(409, "Playwright 未安装。请在 backend 中执行: pip install -e '.[browser]'，然后执行 playwright install chromium")
     backend_dir = Path(__file__).resolve().parents[1]
     creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-    subprocess.Popen(
-        [sys.executable, "-m", "app.gpt_browser", profile_id],
-        cwd=str(backend_dir),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=creationflags,
-        start_new_session=(sys.platform != "win32"),
-    )
+    subprocess.Popen([sys.executable, "-m", "app.gpt_browser", profile_id], cwd=str(backend_dir), stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, creationflags=creationflags, start_new_session=(sys.platform != "win32"))
     return {"ok": True, "message": f"已启动独立浏览器会话：{profile.label}"}
 
 
@@ -91,7 +93,8 @@ def list_projects():
 @app.post("/api/projects", response_model=Project)
 def create_project(payload: ProjectCreate):
     stamp = now()
-    project = Project(id=uuid.uuid4().hex[:10], title=payload.title.strip(), source_text=payload.source_text, created_at=stamp, updated_at=stamp)
+    project = Project(id=uuid.uuid4().hex[:10], title=payload.title.strip(), source_text=payload.source_text,
+                      created_at=stamp, updated_at=stamp)
     projects = read_json(projects_path(), [])
     projects.insert(0, project.model_dump(mode="json"))
     write_json(projects_path(), projects)
@@ -102,19 +105,14 @@ def create_project(payload: ProjectCreate):
 @app.put("/api/projects/{project_id}")
 def update_project(project_id: str, payload: ProjectCreate):
     projects = read_json(projects_path(), [])
-    found = False
     for project in projects:
         if project.get("id") == project_id:
             project["title"] = payload.title.strip()
             project["source_text"] = payload.source_text
             project["updated_at"] = now()
-            found = True
-            result = project
-            break
-    if not found:
-        raise HTTPException(404, "Project not found")
-    write_json(projects_path(), projects)
-    return result
+            write_json(projects_path(), projects)
+            return project
+    raise HTTPException(404, "Project not found")
 
 
 @app.get("/api/projects/{project_id}/assets")
@@ -133,7 +131,8 @@ def append_asset(project_id: str, asset: Asset):
 @app.post("/api/projects/{project_id}/assets/url", response_model=Asset)
 def add_url_asset(project_id: str, payload: URLAssetCreate):
     get_project(project_id)
-    return append_asset(project_id, Asset(id=uuid.uuid4().hex[:12], project_id=project_id, kind="url", media_type=payload.source_type, label=payload.label or payload.url, source=payload.url, created_at=now(), notes=payload.notes))
+    return append_asset(project_id, Asset(id=uuid.uuid4().hex[:12], project_id=project_id, kind="url",
+        media_type=payload.source_type, label=payload.label or payload.url, source=payload.url, created_at=now(), notes=payload.notes))
 
 
 @app.post("/api/projects/{project_id}/assets/text", response_model=Asset)
@@ -142,7 +141,9 @@ def add_text_asset(project_id: str, payload: TextAssetCreate):
     target = project_dir(project_id) / "imports" / f"{uuid.uuid4().hex[:12]}.txt"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(payload.text, encoding="utf-8")
-    return append_asset(project_id, Asset(id=target.stem, project_id=project_id, kind="text", media_type="text/plain", label=payload.label, source="manual", local_path=str(target), size_bytes=target.stat().st_size, sha256=hashlib.sha256(payload.text.encode()).hexdigest(), created_at=now(), notes=payload.notes))
+    return append_asset(project_id, Asset(id=target.stem, project_id=project_id, kind="text", media_type="text/plain",
+        label=payload.label, source="manual", local_path=str(target), size_bytes=target.stat().st_size,
+        sha256=hashlib.sha256(payload.text.encode()).hexdigest(), created_at=now(), notes=payload.notes))
 
 
 @app.post("/api/projects/{project_id}/assets/upload", response_model=Asset)
@@ -159,7 +160,8 @@ async def upload_asset(project_id: str, file: UploadFile = File(...)):
             digest.update(chunk)
             size += len(chunk)
     media_type = file.content_type or "application/octet-stream"
-    return append_asset(project_id, Asset(id=uuid.uuid4().hex[:12], project_id=project_id, kind="file", media_type=media_type, label=safe_name, source="upload", local_path=str(target), size_bytes=size, sha256=digest.hexdigest(), created_at=now()))
+    return append_asset(project_id, Asset(id=uuid.uuid4().hex[:12], project_id=project_id, kind="file", media_type=media_type,
+        label=safe_name, source="upload", local_path=str(target), size_bytes=size, sha256=digest.hexdigest(), created_at=now()))
 
 
 @app.post("/api/projects/{project_id}/jobs")
@@ -168,7 +170,7 @@ async def start_job(project_id: str):
     assets = read_json(assets_path(project_id), [])
     settings = AppSettings.model_validate(read_json(settings_path(), {}))
     job = manager.create_job(project_id)
-    asyncio.create_task(manager.run(job, project.get("source_text", ""), len(assets), settings.video.target_duration_sec))
+    asyncio.create_task(manager.run(job, project.get("source_text", ""), assets, settings))
     return job
 
 
@@ -176,6 +178,32 @@ async def start_job(project_id: str):
 def list_jobs(project_id: str):
     get_project(project_id)
     return manager.list_jobs(project_id)
+
+
+@app.get("/api/projects/{project_id}/jobs/{job_id}/artifacts/{stage_id}")
+def read_artifact(project_id: str, job_id: str, stage_id: str):
+    get_project(project_id)
+    get_job_record(project_id, job_id)
+    if stage_id not in {"ingest", "facts", "verify", "narrative", "shot_plan", "search", "analyze_media", "rank", "ai_review", "timeline", "render", "qa"}:
+        raise HTTPException(400, "Invalid stage")
+    path = artifacts_dir(project_id, job_id) / f"{stage_id}.json"
+    if not path.exists():
+        raise HTTPException(404, "Artifact not generated yet")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+@app.get("/api/projects/{project_id}/jobs/{job_id}/output")
+def download_output(project_id: str, job_id: str):
+    get_project(project_id)
+    get_job_record(project_id, job_id)
+    render = artifacts_dir(project_id, job_id) / "render.json"
+    if not render.exists():
+        raise HTTPException(404, "Render not completed")
+    data = json.loads(render.read_text(encoding="utf-8"))
+    output = data.get("output")
+    if not output or not Path(output).exists():
+        raise HTTPException(404, "Video output not available")
+    return FileResponse(output, media_type="video/mp4", filename=Path(output).name)
 
 
 @app.get("/api/jobs/{job_id}")
