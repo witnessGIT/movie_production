@@ -15,6 +15,7 @@ from .narration import generate_narration
 from .ranking import rank_candidates
 from .remote_media import materialize_video_url
 from .renderer import qa_video, render_timeline
+from .source_discovery import discover
 from .storage import artifacts_dir, jobs_path, project_dir, read_json, write_json
 
 
@@ -138,7 +139,7 @@ class PipelineManager:
         if stage_id == "verify":
             checks = [{"fact_id": f["id"], "status": "needs_source_check", "statement": f["statement"]} for f in state.get("facts", [])]
             state["verification"] = checks
-            return {"summary": "已建立事实核验清单；用户导入的新闻URL将作为证据来源", "checks": checks}
+            return {"summary": "已建立事实核验清单；后续将结合配置来源和导入URL", "checks": checks}
         if stage_id == "narrative":
             beats = [{"id": i + 1, "text": s} for i, s in enumerate(sentences[:10])]
             state["beats"] = beats
@@ -149,6 +150,7 @@ class PipelineManager:
             return {"summary": f"规划 {len(shots)} 个镜头", "shots": shots}
         if stage_id == "search":
             refs = [a for a in state["assets"] if a.get("kind") == "url"]
+            queries = [s["voiceover"] for s in state.get("shots", [])]
             prepared = []
             downloaded = 0
             download_errors = []
@@ -161,10 +163,14 @@ class PipelineManager:
                     download_errors.append({"asset_id": asset.get("id"), "error": result.get("download_error")})
                 prepared.append(result)
             state["assets"] = prepared
+            source_defs = [source.model_dump(mode="json") for source in settings.sources]
+            discovered = await asyncio.to_thread(discover, queries, source_defs)
+            state["discovered"] = discovered
             return {
-                "summary": f"生成 {len(state.get('shots', []))} 条检索意图；外部来源 {len(refs)} 个，自动下载公开视频 {downloaded} 个",
-                "queries": [s["voiceover"] for s in state.get("shots", [])],
+                "summary": f"生成 {len(queries)} 条检索意图；配置来源 {len(source_defs)} 个，发现 {len(discovered)} 条相关新闻/搜索入口，自动下载公开视频 {downloaded} 个",
+                "queries": queries,
                 "references": refs,
+                "discovered": discovered,
                 "downloaded": downloaded,
                 "download_errors": download_errors,
             }
@@ -225,7 +231,9 @@ class PipelineManager:
             narration = await asyncio.to_thread(generate_narration, source_text, out_dir / "narration.wav", settings.video.voiceover_enabled)
             await asyncio.to_thread(render_timeline, state.get("timeline", []), output,
                                     settings.video.width, settings.video.height, settings.video.fps,
-                                    narration, settings.video.subtitle_enabled)
+                                    narration, settings.video.subtitle_enabled, settings.video.bitrate)
+            if not settings.keep_intermediate_files:
+                shutil.rmtree(out_dir / "render_parts", ignore_errors=True)
             state["output"] = str(output)
             return {"summary": f"已渲染成片 {output.name}" + ("（含本地旁白）" if narration else ""),
                     "output": str(output), "ffmpeg": True, "narration": str(narration) if narration else None,
