@@ -40,7 +40,57 @@
 
 本项目不把 ChatGPT 网页当作隐藏 API。前端中的“GPT 账号”是**浏览器会话配置**：保存账号标签、浏览器配置目录和任务交接方式，不保存密码。强模型任务可打包为 `AI_TASK.json` + 候选截图/字幕，供用户在正常登录的 ChatGPT/Work 会话中处理，再把结果导回系统。
 
-## 启动
+## Windows 最简单安装方式
+
+### 第一次使用
+
+先安装：
+
+- Git
+- Python 3.11 或更高版本（安装时勾选 `Add Python to PATH`）
+- Node.js LTS
+
+然后在 PowerShell 中：
+
+```powershell
+git clone https://github.com/witnessGIT/movie_production.git
+cd movie_production
+.\INSTALL_WINDOWS.bat
+```
+
+`INSTALL_WINDOWS.bat` 会自动：
+
+- 创建 Python 虚拟环境；
+- 安装 FastAPI 后端依赖；
+- 安装 faster-whisper / PySceneDetect 等 Python 媒体依赖；
+- 运行后端测试；
+- 安装前端 npm 依赖；
+- 运行前端生产构建检查；
+- 检测 FFmpeg、FFprobe、yt-dlp、Ollama 是否已经安装。
+
+### 以后启动
+
+直接双击项目根目录：
+
+```text
+START_WINDOWS.bat
+```
+
+或者运行：
+
+```powershell
+.\START_WINDOWS.bat
+```
+
+启动后会打开：
+
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8000
+- API docs: http://localhost:8000/docs
+
+> FFmpeg、FFprobe、yt-dlp、Ollama 属于增强能力。即使暂时没装，v0.1 控制台仍可以启动；页面会显示哪些能力尚未就绪。
+
+## 手动启动方式
 
 ### 1. 后端
 
@@ -76,6 +126,8 @@ movie_production/
 ├─ docs/
 ├─ data/                 # 本地运行时创建，不提交大素材
 ├─ scripts/
+├─ INSTALL_WINDOWS.bat
+├─ START_WINDOWS.bat
 ├─ .gitignore
 └─ README.md
 ```
