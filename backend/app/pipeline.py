@@ -13,8 +13,9 @@ from .media_engine import analyze_asset
 from .models import AppSettings, Job, StageState, StageStatus
 from .narration import generate_narration
 from .ranking import rank_candidates
+from .remote_media import materialize_video_url
 from .renderer import qa_video, render_timeline
-from .storage import artifacts_dir, jobs_path, read_json, write_json
+from .storage import artifacts_dir, jobs_path, project_dir, read_json, write_json
 
 
 STAGES = [
@@ -148,7 +149,25 @@ class PipelineManager:
             return {"summary": f"规划 {len(shots)} 个镜头", "shots": shots}
         if stage_id == "search":
             refs = [a for a in state["assets"] if a.get("kind") == "url"]
-            return {"summary": f"生成 {len(state.get('shots', []))} 条检索意图，已有 {len(refs)} 个外部来源", "queries": [s["voiceover"] for s in state.get("shots", [])], "references": refs}
+            prepared = []
+            downloaded = 0
+            download_errors = []
+            download_dir = project_dir(job.project_id) / "downloads"
+            for asset in state["assets"]:
+                result = await asyncio.to_thread(materialize_video_url, asset, download_dir)
+                if result.get("downloaded_from"):
+                    downloaded += 1
+                if result.get("download_error") and asset.get("media_type") == "video":
+                    download_errors.append({"asset_id": asset.get("id"), "error": result.get("download_error")})
+                prepared.append(result)
+            state["assets"] = prepared
+            return {
+                "summary": f"生成 {len(state.get('shots', []))} 条检索意图；外部来源 {len(refs)} 个，自动下载公开视频 {downloaded} 个",
+                "queries": [s["voiceover"] for s in state.get("shots", [])],
+                "references": refs,
+                "downloaded": downloaded,
+                "download_errors": download_errors,
+            }
         if stage_id == "analyze_media":
             analyses = []
             total = max(1, len(state["assets"]))
