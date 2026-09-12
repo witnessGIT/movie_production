@@ -1,0 +1,6 @@
+$ErrorActionPreference = 'Stop'
+Write-Host 'Starting Movie Production backend and frontend...'
+Start-Process powershell -ArgumentList '-NoExit','-Command','cd backend; if (!(Test-Path .venv)) { python -m venv .venv }; .\.venv\Scripts\Activate.ps1; pip install -e .; uvicorn app.main:app --reload --port 8000'
+Start-Process powershell -ArgumentList '-NoExit','-Command','cd frontend; npm install; npm run dev'
+Write-Host 'Frontend: http://localhost:5173'
+Write-Host 'Backend:  http://localhost:8000/docs'

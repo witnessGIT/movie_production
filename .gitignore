@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# Runtime data / large media
+data/
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.wav
+*.mp3
+*.flac
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.env
