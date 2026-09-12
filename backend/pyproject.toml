@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "movie-production-backend"
-version = "0.1.0"
+version = "0.2.0"
 description = "Visual news/video production orchestrator"
 requires-python = ">=3.11"
 dependencies = [
@@ -17,11 +17,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
-media = ["faster-whisper>=1.0", "scenedetect[opencv]>=0.6.5"]
+media = ["faster-whisper>=1.0", "scenedetect[opencv]>=0.6.5", "yt-dlp>=2025.1"]
 browser = ["playwright>=1.47"]
 all = [
   "faster-whisper>=1.0",
   "scenedetect[opencv]>=0.6.5",
+  "yt-dlp>=2025.1",
   "playwright>=1.47"
 ]
 
