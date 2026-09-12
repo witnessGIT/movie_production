@@ -57,21 +57,26 @@ async function saveProject() {
 async function run() {
   if (!currentId.value) return
   await saveProject()
-  job.value = await api.startJob(currentId.value)
+  const createdJob = await api.startJob(currentId.value)
+  job.value = createdJob
   if (socket) socket.close()
-  socket = jobSocket(job.value.id)
+  socket = jobSocket(createdJob.id)
   socket.onmessage = event => {
     const data = JSON.parse(event.data)
-    if (!job.value) return
-    if (data.type === 'snapshot') job.value = data.job
-    if (data.type === 'stage') {
-      const i = job.value.stages.findIndex(s => s.id === data.stage.id)
-      if (i >= 0) job.value.stages[i] = data.stage
+    if (data.type === 'snapshot') {
+      job.value = data.job
+      return
     }
-    if (data.type === 'log') job.value.logs.push(data.message)
+    const active = job.value
+    if (!active) return
+    if (data.type === 'stage') {
+      const i = active.stages.findIndex(s => s.id === data.stage.id)
+      if (i >= 0) active.stages[i] = data.stage
+    }
+    if (data.type === 'log') active.logs.push(data.message)
     if (data.type === 'job') {
-      job.value.state = data.state
-      if (data.timeline) job.value.timeline = data.timeline
+      active.state = data.state
+      if (data.timeline) active.timeline = data.timeline
     }
   }
 }
