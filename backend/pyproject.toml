@@ -18,6 +18,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 media = ["faster-whisper>=1.0", "scenedetect[opencv]>=0.6.5"]
+browser = ["playwright>=1.47"]
+all = [
+  "faster-whisper>=1.0",
+  "scenedetect[opencv]>=0.6.5",
+  "playwright>=1.47"
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
