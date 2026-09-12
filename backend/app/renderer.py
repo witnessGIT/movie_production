@@ -17,7 +17,27 @@ def _encode_part(args: list[str], part: Path) -> None:
     _run(args + ["-an", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", str(part)])
 
 
-def render_timeline(timeline: list[dict[str, Any]], output: Path, width: int, height: int, fps: int) -> Path:
+def _srt_time(value: float) -> str:
+    ms = int(round(max(0.0, value) * 1000))
+    h, rem = divmod(ms, 3_600_000)
+    m, rem = divmod(rem, 60_000)
+    s, milli = divmod(rem, 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{milli:03d}"
+
+
+def write_srt(timeline: list[dict[str, Any]], path: Path) -> Path:
+    blocks = []
+    for i, seg in enumerate(timeline, 1):
+        label = str(seg.get("label") or "").strip()
+        if not label:
+            continue
+        blocks.append(f"{i}\n{_srt_time(float(seg.get('start', 0)))} --> {_srt_time(float(seg.get('end', 0)))}\n{label}\n")
+    path.write_text("\n".join(blocks), encoding="utf-8")
+    return path
+
+
+def render_timeline(timeline: list[dict[str, Any]], output: Path, width: int, height: int, fps: int,
+                    narration: Path | None = None, subtitles: bool = True) -> Path:
     if not shutil.which("ffmpeg"):
         raise RuntimeError("FFmpeg 未安装")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -42,11 +62,30 @@ def render_timeline(timeline: list[dict[str, Any]], output: Path, width: int, he
         parts.append(part)
     manifest = work / "concat.txt"
     manifest.write_text("\n".join(f"file '{p.resolve().as_posix()}'" for p in parts), encoding="utf-8")
-    temp_mp4 = output if output.suffix.lower() != ".webm" else output.with_suffix(".intermediate.mp4")
-    _run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(manifest), "-c", "copy", str(temp_mp4)])
+    visual = work / "visual.mp4"
+    _run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(manifest), "-c", "copy", str(visual)])
+
+    subtitle_path = output.with_suffix(".srt")
+    if subtitles:
+        write_srt(timeline, subtitle_path)
+
+    has_audio = narration is not None and narration.exists()
     if output.suffix.lower() == ".webm":
-        _run(["ffmpeg", "-y", "-i", str(temp_mp4), "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "33", "-an", str(output)])
-        temp_mp4.unlink(missing_ok=True)
+        cmd = ["ffmpeg", "-y", "-i", str(visual)]
+        if has_audio:
+            cmd += ["-i", str(narration)]
+        cmd += ["-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "33"]
+        if has_audio:
+            cmd += ["-c:a", "libopus", "-shortest"]
+        else:
+            cmd += ["-an"]
+        cmd += [str(output)]
+        _run(cmd)
+    elif has_audio:
+        _run(["ffmpeg", "-y", "-i", str(visual), "-i", str(narration), "-c:v", "copy", "-c:a", "aac", "-shortest", str(output)])
+    else:
+        shutil.copy2(visual, output)
+
     (output.parent / "timeline.json").write_text(json.dumps(timeline, ensure_ascii=False, indent=2), encoding="utf-8")
     return output
 
