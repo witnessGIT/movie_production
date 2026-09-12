@@ -20,6 +20,8 @@ export const api = {
   upload: async (id: string, file: File) => { const body = new FormData(); body.append('file', file); return json<Asset>(`/api/projects/${id}/assets/upload`, { method: 'POST', body }) },
   startJob: (id: string) => json<Job>(`/api/projects/${id}/jobs`, { method: 'POST' }),
   jobs: (id: string) => json<Job[]>(`/api/projects/${id}/jobs`),
+  artifact: (projectId: string, jobId: string, stageId: string) => json<any>(`/api/projects/${projectId}/jobs/${jobId}/artifacts/${stageId}`),
+  outputUrl: (projectId: string, jobId: string) => `/api/projects/${projectId}/jobs/${jobId}/output`,
 }
 
 export function jobSocket(jobId: string) {
