@@ -29,6 +29,7 @@ class VideoSettings(BaseModel):
     bitrate: str = "8M"
     format: Literal["mp4", "mov", "webm"] = "mp4"
     subtitle_enabled: bool = True
+    voiceover_enabled: bool = True
     aspect_mode: Literal["16:9", "9:16", "1:1", "custom"] = "16:9"
 
 
@@ -38,6 +39,7 @@ class ModelTierSettings(BaseModel):
     tier2_provider: Literal["ollama", "lmstudio", "disabled"] = "ollama"
     tier2_model: str = "qwen3.5:9b"
     embedding_model: str = "bge-m3"
+    whisper_model: str = "small"
     strong_model_mode: Literal["chatgpt_handoff", "local_only"] = "chatgpt_handoff"
 
 
