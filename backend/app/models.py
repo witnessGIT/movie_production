@@ -43,9 +43,19 @@ class ModelTierSettings(BaseModel):
     strong_model_mode: Literal["chatgpt_handoff", "local_only"] = "chatgpt_handoff"
 
 
+class SourceConfig(BaseModel):
+    id: str
+    label: str
+    kind: Literal["rss", "search_template", "manual"] = "rss"
+    url: str = ""
+    enabled: bool = True
+    notes: str = ""
+
+
 class AppSettings(BaseModel):
     active_gpt_profile_id: str | None = None
     gpt_profiles: list[GPTProfile] = Field(default_factory=list)
+    sources: list[SourceConfig] = Field(default_factory=list)
     video: VideoSettings = Field(default_factory=VideoSettings)
     models: ModelTierSettings = Field(default_factory=ModelTierSettings)
     max_candidate_clips_per_shot: int = Field(3, ge=1, le=20)
