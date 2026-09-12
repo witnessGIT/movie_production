@@ -34,20 +34,31 @@ async function save() {
   catch(e) { message.value = `保存失败：${e}` }
   finally { saving.value = false }
 }
+async function openProfile(id: string) {
+  if (!settings.value) return
+  saving.value = true; message.value = '正在准备独立登录窗口…'
+  try {
+    emit('update:modelValue', await api.saveSettings(settings.value))
+    const result = await api.openGptProfile(id)
+    message.value = `${result.message}。首次打开请在新窗口中正常登录 ChatGPT。`
+    emit('saved')
+  } catch(e) { message.value = `无法打开：${e}` }
+  finally { saving.value = false }
+}
 </script>
 
 <template>
   <div v-if="settings" class="settings-stack">
     <section class="panel">
-      <div class="panel-head"><div><h2>GPT 会话</h2><p>只保存会话 Profile 信息，不保存密码；用于强模型人工交接</p></div><button class="secondary" @click="addProfile">＋ 添加账号配置</button></div>
+      <div class="panel-head"><div><h2>GPT 会话</h2><p>每个账号使用独立浏览器 Profile 保持登录状态；系统不保存密码，也不会把 ChatGPT 网页当隐藏 API</p></div><button class="secondary" @click="addProfile">＋ 添加账号配置</button></div>
       <div class="profile-list" v-if="settings.gpt_profiles.length">
         <div class="profile-card" v-for="p in settings.gpt_profiles" :key="p.id">
           <label class="radio-row"><input type="radio" v-model="settings.active_gpt_profile_id" :value="p.id" /><span>当前账号</span></label>
           <label>显示名称<input v-model="p.label" /></label>
-          <label>浏览器 Profile 目录<input v-model="p.browser_profile_dir" placeholder="profiles/gpt-main" /></label>
+          <label>浏览器 Profile 标签<input v-model="p.browser_profile_dir" placeholder="profiles/gpt-main" /></label>
           <label>交接方式<select v-model="p.handoff_mode"><option value="manual_work">ChatGPT Work</option><option value="manual_chat">普通 ChatGPT 会话</option></select></label>
           <label>备注<input v-model="p.notes" placeholder="例如：Plus 主账号" /></label>
-          <button class="danger-text" @click="removeProfile(p.id)">删除配置</button>
+          <div class="preset-buttons"><button class="secondary" :disabled="saving" @click="openProfile(p.id)">打开登录窗口</button><button class="danger-text" @click="removeProfile(p.id)">删除配置</button></div>
         </div>
       </div>
       <div v-else class="empty">还没有 GPT 会话配置。添加后可为 TIER 3 任务指定使用哪个已登录账号。</div>
