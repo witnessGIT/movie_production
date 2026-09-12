@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .local_models import semantic_rerank
 from .media_engine import analyze_asset
 from .models import AppSettings, Job, StageState, StageStatus
 from .narration import generate_narration
@@ -162,9 +163,22 @@ class PipelineManager:
             state["candidates"] = candidates
             return {"summary": f"分析 {len(analyses)} 个素材，生成 {len(candidates)} 个候选片段", "analyses": analyses, "candidate_count": len(candidates)}
         if stage_id == "rank":
-            ranked = rank_candidates(state.get("shots", []), state.get("candidates", []), settings.max_candidate_clips_per_shot)
+            top_n = settings.max_candidate_clips_per_shot
+            ranked = rank_candidates(state.get("shots", []), state.get("candidates", []), max(top_n, 8))
+            used_embeddings = False
+            for item in ranked:
+                reranked, used = await asyncio.to_thread(
+                    semantic_rerank,
+                    item.get("shot", {}).get("voiceover", ""),
+                    item.get("candidates", []),
+                    settings.models.tier1_provider,
+                    settings.models.embedding_model,
+                )
+                item["candidates"] = reranked[:top_n]
+                used_embeddings = used_embeddings or used
             state["ranked"] = ranked
-            return {"summary": f"完成 {len(ranked)} 个镜头的候选排序", "ranked": ranked}
+            engine = "BGE/本地 embedding + 关键词" if used_embeddings else "关键词/质量降级算法"
+            return {"summary": f"完成 {len(ranked)} 个镜头的候选排序（{engine}）", "ranked": ranked, "embedding_used": used_embeddings}
         if stage_id == "ai_review":
             selected = []
             for item in state.get("ranked", []):
@@ -172,7 +186,14 @@ class PipelineManager:
                 selected.append({"shot": item.get("shot"), "selected": best, "review": "provisional_top1"})
             state["selected"] = selected
             mode = settings.models.strong_model_mode
-            return {"summary": "已生成强模型交接包；当前自动采用 Top-1 作为临时选择" if mode == "chatgpt_handoff" else "本地模式：采用自动排序结果", "mode": mode, "selected": selected, "manual_review_recommended": mode == "chatgpt_handoff"}
+            return {
+                "summary": "已生成强模型交接包；当前自动采用 Top-1 作为临时选择" if mode == "chatgpt_handoff" else "本地模式：采用自动排序结果",
+                "mode": mode,
+                "gpt_profile_id": settings.active_gpt_profile_id,
+                "instructions": "复核每个镜头候选是否与事实、时间和旁白一致；如无合适素材可标记 reject。",
+                "selected": selected,
+                "manual_review_recommended": mode == "chatgpt_handoff",
+            }
         if stage_id == "timeline":
             segments = self._build_timeline(state.get("selected", []), settings.video.target_duration_sec)
             state["timeline"] = segments
