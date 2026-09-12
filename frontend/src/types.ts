@@ -1,12 +1,12 @@
 export type StageState = 'pending' | 'running' | 'done' | 'error' | 'skipped'
 
 export interface GPTProfile { id: string; label: string; browser_profile_dir: string; handoff_mode: 'manual_work' | 'manual_chat'; notes: string }
-export interface VideoSettings { width: number; height: number; fps: number; target_duration_sec: number; bitrate: string; format: 'mp4' | 'mov' | 'webm'; subtitle_enabled: boolean; aspect_mode: '16:9' | '9:16' | '1:1' | 'custom' }
+export interface VideoSettings { width: number; height: number; fps: number; target_duration_sec: number; bitrate: string; format: 'mp4' | 'mov' | 'webm'; subtitle_enabled: boolean; voiceover_enabled: boolean; aspect_mode: '16:9' | '9:16' | '1:1' | 'custom' }
 export interface AppSettings {
   active_gpt_profile_id: string | null
   gpt_profiles: GPTProfile[]
   video: VideoSettings
-  models: { tier1_provider: string; tier1_model: string; tier2_provider: string; tier2_model: string; embedding_model: string; strong_model_mode: string }
+  models: { tier1_provider: string; tier1_model: string; tier2_provider: string; tier2_model: string; embedding_model: string; whisper_model: string; strong_model_mode: string }
   max_candidate_clips_per_shot: number
   keep_intermediate_files: boolean
 }
