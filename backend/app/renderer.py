@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from .agent_review import build_agent_review_packet, load_timeline
+from .agent_review import build_agent_review_packet, evaluate_agent_review_result, load_timeline
 
 
 def _run(args: list[str]) -> None:
@@ -142,12 +142,18 @@ def qa_video(path: Path) -> dict[str, Any]:
     review_packet = None
     if technical_ok and timeline and shutil.which("ffmpeg"):
         review_packet = build_agent_review_packet(path, timeline)
-    semantic_status = (review_packet or {}).get("review_status", "blocked")
+    semantic_review = evaluate_agent_review_result(path, review_packet) if review_packet else {
+        "status": "blocked",
+        "result_path": str(path.parent / "agent_review_result.json"),
+        "issues": ["缺少可供普通 Agent 检查的关键帧证据"],
+    }
+    semantic_status = semantic_review["status"]
+    delivery_ready = technical_ok and semantic_status == "passed"
     return {
-        "ok": technical_ok and semantic_status == "passed",
+        "ok": delivery_ready,
         "technical_ok": technical_ok,
-        "delivery_ready": technical_ok and semantic_status == "passed",
-        "status": "failed" if not technical_ok else ("passed" if semantic_status == "passed" else "needs_semantic_review"),
+        "delivery_ready": delivery_ready,
+        "status": "failed" if not technical_ok or semantic_status == "failed" else ("passed" if delivery_ready else "needs_semantic_review"),
         "size_bytes": size,
         "duration_sec": duration,
         "width": width or None,
@@ -155,8 +161,8 @@ def qa_video(path: Path) -> dict[str, Any]:
         "issues": issues,
         "agent_review_packet": (review_packet or {}).get("packet_path"),
         "semantic_review": {
-            "status": semantic_status,
+            **semantic_review,
             "required": True,
-            "instructions": "普通 Agent 请检查 agent_review.json 中每个镜头的三张关键帧并生成 agent_review_result.json",
+            "instructions": "普通 Agent 请检查 agent_review.json 中每个镜头的三张关键帧并生成 agent_review_result.json，然后重新运行 QA",
         },
     }
