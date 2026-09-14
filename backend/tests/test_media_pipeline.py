@@ -42,4 +42,17 @@ def test_ffmpeg_render_smoke(tmp_path: Path):
     )
     assert output.exists()
     assert output.stat().st_size > 1024
-    assert qa_video(output)["ok"] is True
+    qa = qa_video(output)
+    assert qa["ok"] is True
+    assert qa["duration_sec"] > 0
+    assert qa["width"] == 320
+    assert qa["height"] == 240
+
+
+@pytest.mark.skipif(shutil.which("ffprobe") is None, reason="ffprobe not installed")
+def test_qa_rejects_large_invalid_mp4(tmp_path: Path):
+    output = tmp_path / "broken.mp4"
+    output.write_bytes(b"not-a-video" * 200)
+    qa = qa_video(output)
+    assert qa["ok"] is False
+    assert "FFprobe 无法读取成片" in qa["issues"]
