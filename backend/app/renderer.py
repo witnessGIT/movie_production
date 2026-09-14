@@ -97,10 +97,49 @@ def render_timeline(timeline: list[dict[str, Any]], output: Path, width: int, he
 
 
 def qa_video(path: Path) -> dict[str, Any]:
+    issues: list[str] = []
     if not path.exists():
         return {"ok": False, "issues": ["输出文件不存在"]}
     size = path.stat().st_size
-    issues = []
     if size < 1024:
         issues.append("输出文件异常偏小")
-    return {"ok": not issues, "size_bytes": size, "issues": issues}
+    if not shutil.which("ffprobe"):
+        issues.append("FFprobe 未安装，无法验证视频是否可播放")
+        return {"ok": False, "size_bytes": size, "issues": issues}
+
+    proc = subprocess.run(
+        [
+            "ffprobe", "-v", "error", "-show_entries",
+            "format=duration:stream=codec_type,width,height",
+            "-of", "json", str(path),
+        ],
+        capture_output=True, text=True, check=False,
+    )
+    if proc.returncode != 0:
+        issues.append("FFprobe 无法读取成片")
+        return {"ok": False, "size_bytes": size, "issues": issues, "ffprobe_error": proc.stderr.strip()}
+
+    try:
+        metadata = json.loads(proc.stdout or "{}")
+    except json.JSONDecodeError:
+        issues.append("FFprobe 返回了无效的媒体信息")
+        return {"ok": False, "size_bytes": size, "issues": issues}
+
+    video_stream = next((stream for stream in metadata.get("streams", []) if stream.get("codec_type") == "video"), None)
+    duration = float((metadata.get("format") or {}).get("duration") or 0.0)
+    width = int((video_stream or {}).get("width") or 0)
+    height = int((video_stream or {}).get("height") or 0)
+    if video_stream is None:
+        issues.append("成片不包含视频流")
+    if duration <= 0:
+        issues.append("成片时长无效")
+    if video_stream is not None and (width <= 0 or height <= 0):
+        issues.append("成片分辨率无效")
+    return {
+        "ok": not issues,
+        "size_bytes": size,
+        "duration_sec": duration,
+        "width": width or None,
+        "height": height or None,
+        "issues": issues,
+    }
