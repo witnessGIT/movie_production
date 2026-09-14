@@ -84,6 +84,17 @@ def build_agent_review_packet(video_path: Path, timeline: list[dict[str, Any]], 
         "extraction_errors": extraction_errors,
         "review_status": "blocked" if extraction_errors or any(len(x["frames"]) < 3 for x in segments) else "pending",
         "review_result_path": str(video_path.parent / "agent_review_result.json"),
+        "result_schema": {
+            "reviewer": "普通 Agent 的名称或运行标识",
+            "segments": [{
+                "segment_id": "必须与本文件中的 segment_id 一致",
+                "visual_matches_voiceover": "pass | fail | needs_human_review",
+                "person_place_event_match": "pass | fail | needs_human_review",
+                "time_context_not_misleading": "pass | fail | needs_human_review",
+                "visible_text_consistent": "pass | fail | needs_human_review",
+                "notes": "判断依据；fail 或 needs_human_review 时必填",
+            }],
+        },
     }
     packet_path = video_path.parent / "agent_review.json"
     packet_path.write_text(json.dumps(packet, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -99,3 +110,63 @@ def load_timeline(video_path: Path) -> list[dict[str, Any]]:
     except (OSError, json.JSONDecodeError):
         return []
     return data if isinstance(data, list) else []
+
+
+REQUIRED_CHECKS = (
+    "visual_matches_voiceover",
+    "person_place_event_match",
+    "time_context_not_misleading",
+    "visible_text_consistent",
+)
+
+
+def evaluate_agent_review_result(video_path: Path, packet: dict[str, Any]) -> dict[str, Any]:
+    """Validate an ordinary Agent's structured review without trusting a bare pass flag."""
+    result_path = video_path.parent / "agent_review_result.json"
+    if packet.get("review_status") == "blocked":
+        return {"status": "blocked", "result_path": str(result_path), "issues": ["关键帧证据不完整"]}
+    if not result_path.exists():
+        return {"status": "pending", "result_path": str(result_path), "issues": ["尚未提交普通 Agent 语义检查结果"]}
+    try:
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"status": "invalid", "result_path": str(result_path), "issues": ["agent_review_result.json 无法读取"]}
+
+    expected_ids = [segment.get("segment_id") for segment in packet.get("segments", [])]
+    reviews = result.get("segments")
+    if not isinstance(reviews, list):
+        return {"status": "invalid", "result_path": str(result_path), "issues": ["检查结果缺少 segments 数组"]}
+    by_id = {item.get("segment_id"): item for item in reviews if isinstance(item, dict)}
+    issues: list[str] = []
+    has_fail = False
+    has_escalation = False
+    for segment_id in expected_ids:
+        review = by_id.get(segment_id)
+        if review is None:
+            issues.append(f"镜头 {segment_id} 缺少检查结果")
+            continue
+        for check in REQUIRED_CHECKS:
+            value = review.get(check)
+            if value not in {"pass", "fail", "needs_human_review"}:
+                issues.append(f"镜头 {segment_id} 的 {check} 状态无效")
+            elif value == "fail":
+                has_fail = True
+            elif value == "needs_human_review":
+                has_escalation = True
+        if any(review.get(check) in {"fail", "needs_human_review"} for check in REQUIRED_CHECKS) and not str(review.get("notes") or "").strip():
+            issues.append(f"镜头 {segment_id} 未说明失败或升级依据")
+
+    if issues:
+        status = "invalid"
+    elif has_fail:
+        status = "failed"
+    elif has_escalation:
+        status = "needs_human_review"
+    else:
+        status = "passed"
+    return {
+        "status": status,
+        "result_path": str(result_path),
+        "reviewer": result.get("reviewer"),
+        "issues": issues,
+    }
