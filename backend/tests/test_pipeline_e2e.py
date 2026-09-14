@@ -31,4 +31,7 @@ async def test_pipeline_runs_text_to_mp4():
     assert output.stat().st_size > 1024
     qa_json = artifacts_dir(project_id, job.id) / "qa.json"
     qa = json.loads(qa_json.read_text(encoding="utf-8"))
-    assert qa["ok"] is True
+    assert qa["technical_ok"] is True
+    assert qa["ok"] is False
+    assert qa["status"] == "needs_semantic_review"
+    assert qa["agent_review_packet"]
