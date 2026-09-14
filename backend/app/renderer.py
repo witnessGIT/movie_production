@@ -6,6 +6,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from .agent_review import build_agent_review_packet, load_timeline
+
 
 def _run(args: list[str]) -> None:
     proc = subprocess.run(args, capture_output=True, text=True, check=False)
@@ -135,11 +137,26 @@ def qa_video(path: Path) -> dict[str, Any]:
         issues.append("成片时长无效")
     if video_stream is not None and (width <= 0 or height <= 0):
         issues.append("成片分辨率无效")
+    technical_ok = not issues
+    timeline = load_timeline(path)
+    review_packet = None
+    if technical_ok and timeline and shutil.which("ffmpeg"):
+        review_packet = build_agent_review_packet(path, timeline)
+    semantic_status = (review_packet or {}).get("review_status", "blocked")
     return {
-        "ok": not issues,
+        "ok": technical_ok and semantic_status == "passed",
+        "technical_ok": technical_ok,
+        "delivery_ready": technical_ok and semantic_status == "passed",
+        "status": "failed" if not technical_ok else ("passed" if semantic_status == "passed" else "needs_semantic_review"),
         "size_bytes": size,
         "duration_sec": duration,
         "width": width or None,
         "height": height or None,
         "issues": issues,
+        "agent_review_packet": (review_packet or {}).get("packet_path"),
+        "semantic_review": {
+            "status": semantic_status,
+            "required": True,
+            "instructions": "普通 Agent 请检查 agent_review.json 中每个镜头的三张关键帧并生成 agent_review_result.json",
+        },
     }
