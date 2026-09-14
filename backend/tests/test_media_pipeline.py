@@ -1,3 +1,4 @@
+import json
 import shutil
 from pathlib import Path
 
@@ -43,10 +44,33 @@ def test_ffmpeg_render_smoke(tmp_path: Path):
     assert output.exists()
     assert output.stat().st_size > 1024
     qa = qa_video(output)
-    assert qa["ok"] is True
+    assert qa["technical_ok"] is True
+    assert qa["ok"] is False
+    assert qa["status"] == "needs_semantic_review"
     assert qa["duration_sec"] > 0
     assert qa["width"] == 320
     assert qa["height"] == 240
+
+    packet = json.loads(Path(qa["agent_review_packet"]).read_text(encoding="utf-8"))
+    assert packet["review_status"] == "pending"
+    assert len(packet["segments"]) == 1
+    assert len(packet["segments"][0]["frames"]) == 3
+    result = {
+        "reviewer": "test-agent",
+        "segments": [{
+            "segment_id": packet["segments"][0]["segment_id"],
+            "visual_matches_voiceover": "pass",
+            "person_place_event_match": "pass",
+            "time_context_not_misleading": "pass",
+            "visible_text_consistent": "pass",
+            "notes": "三张测试关键帧均已检查",
+        }],
+    }
+    Path(packet["review_result_path"]).write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+    final_qa = qa_video(output)
+    assert final_qa["ok"] is True
+    assert final_qa["delivery_ready"] is True
+    assert final_qa["semantic_review"]["status"] == "passed"
 
 
 @pytest.mark.skipif(shutil.which("ffprobe") is None, reason="ffprobe not installed")
